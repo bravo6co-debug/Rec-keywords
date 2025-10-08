@@ -202,6 +202,29 @@ HTML_TEMPLATE = """
             font-size: 13px;
             font-weight: 500;
             border: 1px solid #bbdefb;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .feature-tag:hover {
+            background: #bbdefb;
+            transform: translateY(-2px);
+            box-shadow: 0 3px 10px rgba(25, 118, 210, 0.2);
+        }
+
+        .feature-tag.selected {
+            background: #1976d2;
+            color: white;
+            border-color: #1976d2;
+        }
+
+        .feature-tag input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
         }
 
         .keyword-grid {
@@ -402,9 +425,9 @@ HTML_TEMPLATE = """
                 <h4>💡 사용 팁</h4>
                 <p>
                 ✅ <strong>네이버 플레이스 업체 소개</strong>를 그대로 복사해서 붙여넣으세요<br>
-                ✅ 진료과목, 메뉴, 서비스 내용 등이 <strong>길게 작성</strong>되어 있어도 자동으로 분석합니다<br>
-                ✅ 야간진료, 주말진료, 전문분야 등 <strong>특별한 강점</strong>을 자동으로 감지합니다<br>
-                ✅ 한강뷰, 바다뷰 등 <strong>허위 정보는 자동으로 차단</strong>됩니다
+                ✅ 업종별 특징, 제공 서비스, 주요 메뉴 등이 <strong>길게 작성</strong>되어 있어도 자동으로 분석합니다<br>
+                ✅ 영업시간 연장, 주말 운영, 전문 분야 등 <strong>특별한 강점</strong>을 자동으로 감지합니다<br>
+                ✅ 과장되거나 검증되지 않은 <strong>허위 정보는 자동으로 차단</strong>됩니다
                 </p>
             </div>
 
@@ -425,6 +448,14 @@ HTML_TEMPLATE = """
 
                 <div class="result-card" id="featuresCard" style="display:none;">
                     <h3>⭐ 특별 강점 (자동 감지)</h3>
+                    <p style="color: #666; font-size: 14px; margin-bottom: 10px;">
+                        💡 특별 강점을 선택한 후 "선택한 강점 복사" 버튼을 클릭하세요
+                    </p>
+                    <div class="selection-controls">
+                        <button class="btn-control btn-select-all" onclick="selectAllFeatures()">✅ 전체 선택</button>
+                        <button class="btn-control btn-copy-selected" onclick="copySelectedFeatures()">📋 선택한 강점 복사</button>
+                        <button class="btn-control btn-clear-selection" onclick="clearFeatureSelection()">🔄 선택 초기화</button>
+                    </div>
                     <div class="feature-tags" id="featureTags"></div>
                 </div>
 
@@ -438,10 +469,9 @@ HTML_TEMPLATE = """
                 <div class="result-card">
                     <h3>✅ 추천 키워드 (<span id="keywordCount"></span>개)</h3>
                     <p style="color: #666; font-size: 14px; margin-bottom: 10px;">
-                        💡 키워드를 선택한 후 "선택한 키워드 복사" 버튼을 클릭하세요
+                        💡 최대 8개까지 선택 가능합니다. 선택 후 "선택한 키워드 복사" 버튼을 클릭하세요 (<span id="selectedCount">0</span>/8 선택됨)
                     </p>
                     <div class="selection-controls">
-                        <button class="btn-control btn-select-all" onclick="selectAllKeywords()">✅ 전체 선택</button>
                         <button class="btn-control btn-copy-selected" onclick="copySelectedKeywords()">📋 선택한 키워드 복사</button>
                         <button class="btn-control btn-clear-selection" onclick="clearSelection()">🔄 선택 초기화</button>
                     </div>
@@ -508,24 +538,27 @@ HTML_TEMPLATE = """
                 item.appendChild(checkbox);
                 item.appendChild(label);
 
-                // 클릭 시 체크박스 토글 및 스타일 변경
+                // 클릭 시 체크박스 토글 및 스타일 변경 (최대 8개 제한)
                 item.onclick = (e) => {
                     if (e.target !== checkbox) {
+                        const selectedCount = document.querySelectorAll('.keyword-checkbox:checked').length;
+                        if (!checkbox.checked && selectedCount >= 8) {
+                            alert('최대 8개까지만 선택 가능합니다!');
+                            return;
+                        }
                         checkbox.checked = !checkbox.checked;
                     }
-                    if (checkbox.checked) {
-                        item.classList.add('selected');
-                    } else {
-                        item.classList.remove('selected');
-                    }
+                    updateKeywordSelection();
                 };
 
                 checkbox.onchange = () => {
-                    if (checkbox.checked) {
-                        item.classList.add('selected');
-                    } else {
-                        item.classList.remove('selected');
+                    const selectedCount = document.querySelectorAll('.keyword-checkbox:checked').length;
+                    if (checkbox.checked && selectedCount > 8) {
+                        checkbox.checked = false;
+                        alert('최대 8개까지만 선택 가능합니다!');
+                        return;
                     }
+                    updateKeywordSelection();
                 };
 
                 grid.appendChild(item);
@@ -536,10 +569,44 @@ HTML_TEMPLATE = """
                 document.getElementById('featuresCard').style.display = 'block';
                 const featureTags = document.getElementById('featureTags');
                 featureTags.innerHTML = '';
-                data.특별강점.forEach(feature => {
+                data.특별강점.forEach((feature, index) => {
                     const tag = document.createElement('div');
                     tag.className = 'feature-tag';
-                    tag.textContent = feature;
+                    tag.dataset.feature = feature;
+
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.id = `feature-${index}`;
+                    checkbox.className = 'feature-checkbox';
+
+                    const label = document.createElement('label');
+                    label.htmlFor = `feature-${index}`;
+                    label.textContent = feature;
+                    label.style.cursor = 'pointer';
+
+                    tag.appendChild(checkbox);
+                    tag.appendChild(label);
+
+                    // 클릭 시 체크박스 토글 및 스타일 변경
+                    tag.onclick = (e) => {
+                        if (e.target !== checkbox) {
+                            checkbox.checked = !checkbox.checked;
+                        }
+                        if (checkbox.checked) {
+                            tag.classList.add('selected');
+                        } else {
+                            tag.classList.remove('selected');
+                        }
+                    };
+
+                    checkbox.onchange = () => {
+                        if (checkbox.checked) {
+                            tag.classList.add('selected');
+                        } else {
+                            tag.classList.remove('selected');
+                        }
+                    };
+
                     featureTags.appendChild(tag);
                 });
             } else {
@@ -560,12 +627,15 @@ HTML_TEMPLATE = """
             document.getElementById('results').scrollIntoView({ behavior: 'smooth' });
         }
 
-        function selectAllKeywords() {
+        function updateKeywordSelection() {
             const checkboxes = document.querySelectorAll('.keyword-checkbox');
-            const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+            const selectedCount = document.querySelectorAll('.keyword-checkbox:checked').length;
 
+            // 선택 개수 업데이트
+            document.getElementById('selectedCount').textContent = selectedCount;
+
+            // 선택 상태에 따라 스타일 변경
             checkboxes.forEach(checkbox => {
-                checkbox.checked = !allChecked;
                 const item = checkbox.closest('.keyword-item');
                 if (checkbox.checked) {
                     item.classList.add('selected');
@@ -604,7 +674,56 @@ HTML_TEMPLATE = """
             const checkboxes = document.querySelectorAll('.keyword-checkbox');
             checkboxes.forEach(checkbox => {
                 checkbox.checked = false;
-                checkbox.closest('.keyword-item').classList.remove('selected');
+            });
+            updateKeywordSelection();
+        }
+
+        function selectAllFeatures() {
+            const checkboxes = document.querySelectorAll('.feature-checkbox');
+            const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = !allChecked;
+                const tag = checkbox.closest('.feature-tag');
+                if (checkbox.checked) {
+                    tag.classList.add('selected');
+                } else {
+                    tag.classList.remove('selected');
+                }
+            });
+        }
+
+        function copySelectedFeatures() {
+            const selectedCheckboxes = document.querySelectorAll('.feature-checkbox:checked');
+
+            if (selectedCheckboxes.length === 0) {
+                alert('특별 강점을 먼저 선택해주세요!');
+                return;
+            }
+
+            const selectedFeatures = Array.from(selectedCheckboxes).map(cb => {
+                return cb.closest('.feature-tag').dataset.feature;
+            });
+
+            const featureText = selectedFeatures.join(', ');
+
+            navigator.clipboard.writeText(featureText).then(() => {
+                const button = document.querySelector('.btn-copy-selected[onclick="copySelectedFeatures()"]');
+                const originalText = button.textContent;
+                button.textContent = '✓ 복사됨!';
+                setTimeout(() => {
+                    button.textContent = originalText;
+                }, 1500);
+            }).catch(err => {
+                alert('복사 실패: ' + err.message);
+            });
+        }
+
+        function clearFeatureSelection() {
+            const checkboxes = document.querySelectorAll('.feature-checkbox');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = false;
+                checkbox.closest('.feature-tag').classList.remove('selected');
             });
         }
 
